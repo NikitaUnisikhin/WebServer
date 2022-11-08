@@ -7,8 +7,9 @@ class Request:
         self.rfile = rfile
         self.body = body
 
-    # def body(self):
-    #     size = self.headers.get('Content-Length')
-    #     if not size:
-    #         return None
-    #     return self.rfile.read(size)
+    def __str__(self):
+        request = f"{self.method} {self.target} {self.version}"
+        request += f"\n{self.headers}"[:-2]
+        if self.body is not None:
+            request += f"\n{self.body}"
+        return request

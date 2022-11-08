@@ -1,6 +1,7 @@
 import socket
 import sys
 import os
+import logging
 from request import Request
 from response import Response
 from http_error import HTTPError
@@ -26,30 +27,30 @@ class MyHTTPServer:
         try:
             serv_sock.bind((self._host, self._port))
             serv_sock.listen()
-            print('Server start!')
+            logging.info('Server start!')
 
             while True:
                 conn, _ = serv_sock.accept()
-                print('New connect!')
+                logging.info('New connect!')
                 try:
                     self.serve_client(conn)
                 except Exception as e:
-                    print('Client serving failed', e)
+                    logging.warning(f"Client serving failed {e}")
         finally:
             serv_sock.close()
-            print("Close connect")
+            logging.info("Close connect")
 
     def serve_client(self, conn):
         try:
             req = self.parse_request(conn)
+            logging.info("\n" + str(req))
             resp = self.handle_request(req)
             self.send_response(conn, resp)
         except ConnectionResetError:
             conn = None
-            print("Hard close connect!")
+            logging.warning("Hard close connect!")
         except Exception as e:
             self.send_error(conn, e)
-            print("Error!")
 
         if conn:
             req.rfile.close()
@@ -131,6 +132,7 @@ class MyHTTPServer:
             data = my_file.read()
             my_file.close()
             return Response(200, "OK", None, data)
+        raise HTTPError(404, "File not found")
 
     def handle_post_request(self, req):
         if os.path.isfile("C://Repos/WebServer/Server_Data/" + req.target):
@@ -144,22 +146,28 @@ class MyHTTPServer:
     def handle_head_request(self, req):
         if os.path.isfile("C://Repos/WebServer/Server_Data/" + req.target):
             return Response(200, "OK")
+        raise HTTPError(404, "File not found")
 
     def send_response(self, conn, resp):
+        log_response = "\n"
         wfile = conn.makefile('wb')
         status_line = f'HTTP/1.1 {resp.status} {resp.reason}\r\n'
+        log_response += status_line[:-1]
         wfile.write(status_line.encode('iso-8859-1'))
 
         if resp.headers:
             for (key, value) in resp.headers:
                 header_line = f'{key}: {value}\r\n'
+                log_response += header_line
                 wfile.write(header_line.encode('iso-8859-1'))
 
         wfile.write(b'\r\n')
 
         if resp.body:
-            wfile.write(resp.body.encode('iso-8859-1'))
+            log_response += resp.body.decode('iso-8859-1')
+            wfile.write(resp.body)
 
+        logging.info(log_response)
         wfile.flush()
         wfile.close()
 
@@ -188,6 +196,7 @@ if __name__ == '__main__':
     name = "server"
 
     serv = MyHTTPServer(host, port, name)
+    logging.basicConfig(level=logging.INFO, filename="py_log.log", filemode="w")
     try:
         serv.serve()
     except KeyboardInterrupt:
