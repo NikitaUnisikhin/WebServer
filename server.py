@@ -1,11 +1,12 @@
 import socket
-import sys
 import os
 import logging
 from request import Request
 from response import Response
 from http_error import HTTPError
 from email.parser import Parser
+from configuration import parsed_toml
+
 
 MAX_LINE = 64 * 1024
 MAX_HEADERS = 100
@@ -26,7 +27,7 @@ class MyHTTPServer:
 
         try:
             serv_sock.bind((self._host, self._port))
-            serv_sock.listen()
+            serv_sock.listen(parsed_toml["server"]["connection_max"])
             logging.info('Server start!')
 
             while True:
@@ -191,9 +192,13 @@ if __name__ == '__main__':
     # port = int(sys.argv[2])
     # name = sys.argv[3]
 
-    host = "127.0.0.1"
-    port = 100
-    name = "server"
+    # host = "127.0.0.1"
+    # port = 100
+    # name = "server"
+
+    host = parsed_toml["server"]["host"]
+    port = parsed_toml["server"]["port"]
+    name = parsed_toml["server"]["name"]
 
     serv = MyHTTPServer(host, port, name)
     logging.basicConfig(level=logging.INFO, filename="py_log.log", filemode="w")
