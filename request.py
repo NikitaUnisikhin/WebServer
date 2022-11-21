@@ -1,10 +1,9 @@
 class Request:
-    def __init__(self, method, target, version, headers, rfile, body=None):
+    def __init__(self, method, target, version, headers, body=None):
         self.method = method
         self.target = target
         self.version = version
         self.headers = headers
-        self.rfile = rfile
         self.body = body
 
     def __str__(self):

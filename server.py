@@ -6,6 +6,8 @@ from response import Response
 from http_error import HTTPError
 from email.parser import Parser
 from configuration import parsed_toml
+import asyncio
+import aiofile
 
 
 MAX_LINE = 64 * 1024
@@ -19,7 +21,8 @@ class MyHTTPServer:
         self._server_name = server_name
         self._users = {}
 
-    def serve(self):
+    async def serve(self):
+        loop = asyncio.get_running_loop()
         serv_sock = socket.socket(
             socket.AF_INET,
             socket.SOCK_STREAM,
@@ -31,19 +34,20 @@ class MyHTTPServer:
             logging.info('Server start!')
 
             while True:
-                conn, _ = serv_sock.accept()
+                conn, _ = await loop.sock_accept(serv_sock)
                 logging.info('New connect!')
                 try:
-                    self.serve_client(conn)
+                    # loop.create_task(self.serve_client(conn))
+                    await self.serve_client(conn)
                 except Exception as e:
                     logging.warning(f"Client serving failed {e}")
         finally:
             serv_sock.close()
             logging.info("Close connect")
 
-    def serve_client(self, conn):
+    async def serve_client(self, conn):
         try:
-            req = self.parse_request(conn)
+            req = await self.parse_request(conn)
             logging.info("\n" + str(req))
             resp = self.handle_request(req)
             self.send_response(conn, resp)
@@ -54,16 +58,53 @@ class MyHTTPServer:
             self.send_error(conn, e)
 
         if conn:
-            req.rfile.close()
             conn.close()
 
-    def parse_request(self, conn):
-        rfile = conn.makefile('rb')
-        method, target, ver = self.parse_request_line(rfile)
-        headers = self.parse_headers(rfile)
+    async def parse_request(self, conn):
+        loop = asyncio.get_running_loop()
+        is_first_row = True
+        is_first_enter = True
+        rows = []
+        have_body = False
+        ost = ''
+        while True:
+            data = str(await loop.sock_recv(conn, MAX_LINE), 'iso-8859-1')
+            if '\n' not in data and is_first_row:
+                raise HTTPError(400, 'Bad request',
+                                'Request line is too long')
+            elif '\n' not in data:
+                raise HTTPError(494, 'Request header too large')
+
+            split_data = data.split('\n')
+            ost = split_data[-1]
+
+            if is_first_row:
+                rows += split_data[:-1]
+                is_first_row = False
+            else:
+                rows.append(ost + split_data[0])
+                rows += split_data[1:-1]
+            ost = split_data[-1]
+
+            if '' in rows and is_first_enter:
+                for line in rows:
+                    if 'Content-Length' in line:
+                        have_body = True
+                        break
+                if have_body is False:
+                    break
+
+            if rows.count('') == 2 and have_body:
+                break
+
+        index_enter = rows.index('')
+        method, target, ver = self.parse_request_line(rows[0])
+        headers = self.parse_headers(rows[1:index_enter])
+
         body = None
-        if headers.__getitem__('Content-Length') != None:
-            body = self.parse_body(rfile)
+        if have_body:
+            body = self.parse_body(rows[index_enter+1:-1])
+
         host = headers.get('Host')
         if not host:
             raise HTTPError(400, 'Bad request',
@@ -71,15 +112,10 @@ class MyHTTPServer:
         if host not in (self._server_name,
                         f'{self._server_name}:{self._port}'):
             raise HTTPError(404, 'Not found')
-        return Request(method, target, ver, headers, rfile, body)
+        return Request(method, target, ver, headers, body)
 
-    def parse_request_line(self, rfile):
-        raw = rfile.readline(MAX_LINE + 1)
-        if len(raw) > MAX_LINE:
-            raise HTTPError(400, 'Bad request',
-                            'Request line is too long')
-
-        req_line = str(raw, 'iso-8859-1')
+    def parse_request_line(self, row):
+        req_line = row
         words = req_line.split()
         if len(words) != 3:
             raise HTTPError(400, 'Bad request',
@@ -90,33 +126,17 @@ class MyHTTPServer:
             raise HTTPError(505, 'HTTP Version Not Supported')
         return method, target, ver
 
-    def parse_headers(self, rfile):
-        headers = []
-        while True:
-            line = rfile.readline(MAX_LINE + 1)
-            if len(line) > MAX_LINE:
-                raise HTTPError(494, 'Request header too large')
+    def parse_headers(self, headers):
+        if len(headers) > MAX_HEADERS:
+            raise HTTPError(494, 'Too many headers')
 
-            if line in b'\r\n':
-                break
-
-            headers.append(line)
-            if len(headers) > MAX_HEADERS:
-                raise HTTPError(494, 'Too many headers')
-
-        sheaders = b''.join(headers).decode('iso-8859-1')
+        sheaders = '\n'.join(headers)
         return Parser().parsestr(sheaders)
 
-    def parse_body(self, rfile):
+    def parse_body(self, rows):
         body = b""
-        while True:
-            line = rfile.readline(MAX_LINE + 1)
-            if len(line) > MAX_LINE:
-                raise HTTPError(494, 'Request header too large')
-            if line in (b'\r\n', b'\n', b''):
-                break
-            body += line
-
+        for row in rows:
+            body += row.encode('iso-8859-1')
         return body
 
     def handle_request(self, req):
@@ -165,8 +185,8 @@ class MyHTTPServer:
         wfile.write(b'\r\n')
 
         if resp.body:
-            log_response += resp.body.decode('iso-8859-1')
-            wfile.write(resp.body)
+            log_response += resp.body
+            wfile.write(resp.body.encode('iso-8859-1'))
 
         logging.info(log_response)
         wfile.flush()
@@ -187,7 +207,7 @@ class MyHTTPServer:
         self.send_response(conn, resp)
 
 
-if __name__ == '__main__':
+def main():
     # host = sys.argv[1]
     # port = int(sys.argv[2])
     # name = sys.argv[3]
@@ -203,6 +223,11 @@ if __name__ == '__main__':
     serv = MyHTTPServer(host, port, name)
     logging.basicConfig(level=logging.INFO, filename="py_log.log", filemode="w")
     try:
-        serv.serve()
+        asyncio.run(serv.serve())
+        # serv.serve()
     except KeyboardInterrupt:
         pass
+
+
+if __name__ == '__main__':
+    main()
