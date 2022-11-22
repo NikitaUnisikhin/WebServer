@@ -1,4 +1,5 @@
 from response import Response
+from connection import Connection
 
 
 class HTTPError(Exception):
@@ -8,11 +9,11 @@ class HTTPError(Exception):
         self.body = body
 
     @staticmethod
-    def send_error(conn, err):
+    def send_error(conn: Connection, err):
         try:
             status = err.status
             reason = err.reason
-            body = (err.body or err.reason).encode('iso-8859-1')
+            body = (err.body or err.reason + '\n').encode('iso-8859-1')
         except:
             status = 500
             reason = b'Internal Server Error'
@@ -22,4 +23,7 @@ class HTTPError(Exception):
                         [('Content-Length', len(body))],
                         body.decode('iso-8859-1'))
 
-        Response.send_response(conn, resp)
+        if conn.connection_is_keep_alive:
+            resp.headers += [('Connection', 'Keep-Alive')]
+
+        Response.send_response(conn.sock, resp)

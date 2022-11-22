@@ -6,6 +6,7 @@ from http_error import HTTPError
 from configuration import parsed_toml
 from database import get_path_to_data
 from request_parser import RequestParser
+from connection import Connection
 import asyncio
 
 
@@ -32,7 +33,8 @@ class MyHTTPServer:
             logging.info('Server start!')
 
             while True:
-                conn, _ = await loop.sock_accept(server_sock)
+                conn_sock, _ = await loop.sock_accept(server_sock)
+                conn = Connection(conn_sock)
                 logging.info('New connect!')
                 try:
                     await self.handle_connect(conn)
@@ -43,21 +45,27 @@ class MyHTTPServer:
             logging.info("Close connect")
 
     async def handle_connect(self, conn):
-        try:
-            request = await RequestParser.parse_request(conn, self)
-            logging.info("\n" + str(request))
-            response = self.handle_request(request)
-            Response.send_response(conn, response)
-        except ConnectionResetError:
-            conn = None
-            logging.warning("Hard close connect!")
-        except Exception as e:
-            HTTPError.send_error(conn, e)
+        while True:
+            try:
+                request = await RequestParser.parse_request(conn.sock, self)
+                logging.info("\n" + str(request))
+                response = self.handle_request(request, conn)
+                Response.send_response(conn.sock, response)
+            except ConnectionResetError:
+                conn = None
+                logging.warning("Hard close connect!")
+            except Exception as e:
+                HTTPError.send_error(conn, e)
 
-        if conn:
-            conn.close()
+            if not conn.connection_is_keep_alive:
+                conn.sock.close()
 
-    def handle_request(self, req):
+    def handle_request(self, req, conn):
+        if req.headers.get('Connection') == 'Keep-Alive':
+            conn.connection_is_keep_alive = True
+        else:
+            conn.connection_is_keep_alive = False
+
         if req.method == "GET":
             return self.handle_get_request(req)
         elif req.method == "POST":
