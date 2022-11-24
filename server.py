@@ -74,24 +74,24 @@ class MyHTTPServer:
             return self.handle_head_request(req)
 
     def handle_get_request(self, req):
-        if os.path.isfile(get_path_to_data(req.target)):
-            my_file = open(get_path_to_data(req.target))
+        if os.path.isfile(get_path_to_data(req.headers.get("Host"), req.target[1:])):
+            my_file = open(get_path_to_data(req.headers.get("Host"), req.target[1:]))
             data = my_file.read()
             my_file.close()
             return Response(200, "OK", None, data)
         raise HTTPError(404, "File not found")
 
     def handle_post_request(self, req):
-        if os.path.isfile(get_path_to_data(req.target)):
+        if os.path.isfile(get_path_to_data(req.headers.get("Host"), req.target[1:])):
             raise HTTPError(495, "A file with the same name already exists on the server")
         else:
-            my_file = open(get_path_to_data(req.target), "w+")
+            my_file = open(get_path_to_data(req.headers.get("Host"), req.target[1:]), "w+")
         my_file.write(req.body.decode('iso-8859-1'))
         my_file.close()
         return Response(200, "OK")
 
     def handle_head_request(self, req):
-        if os.path.isfile(get_path_to_data(req.target)):
+        if os.path.isfile(get_path_to_data(req.headers.get("Host"), req.target[1:])):
             return Response(200, "OK")
         raise HTTPError(404, "File not found")
 

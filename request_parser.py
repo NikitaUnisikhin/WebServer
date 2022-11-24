@@ -2,6 +2,7 @@ import asyncio
 from http_error import HTTPError
 from email.parser import Parser
 from request import Request
+from configuration import parsed_toml
 
 
 MAX_LINE = 64 * 1024
@@ -62,9 +63,12 @@ class RequestParser:
             raise HTTPError(400, 'Bad request',
                             'Host header is missing')
 
-        if host not in (server._server_name,
-                        f'{server._server_name}:{server._port}'):
+        if parsed_toml[host.split(".")[0]] is None:
             raise HTTPError(404, 'Not found')
+
+        # if host not in (server._server_name,
+        #                 f'{server._server_name}:{server._port}'):
+        #     raise HTTPError(404, 'Not found')
 
         return Request(method, target, ver, headers, body)
 
