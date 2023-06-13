@@ -2,7 +2,7 @@ import logging
 
 
 class Response:
-    def __init__(self, status, reason, headers=None, body=None):
+    def __init__(self, status, reason, headers: dict = None, body=None):
         self.status = status
         self.reason = reason
         self.headers = headers
@@ -17,7 +17,7 @@ class Response:
         wfile.write(status_line.encode('iso-8859-1'))
 
         if resp.headers:
-            for (key, value) in resp.headers:
+            for (key, value) in resp.headers.items():
                 header_line = f'{key}: {value}\r\n'
                 log_response += header_line
                 wfile.write(header_line.encode('iso-8859-1'))

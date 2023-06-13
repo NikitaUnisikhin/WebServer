@@ -47,7 +47,7 @@ class MyHTTPServer:
     async def handle_connect(self, conn):
         while True:
             try:
-                request = await RequestParser.parse_request(conn.sock, self)
+                request = await RequestParser.parse_request(conn.sock)
                 logging.info("\n" + str(request))
                 response = self.handle_request(request, conn)
                 Response.send_response(conn.sock, response)
@@ -56,9 +56,9 @@ class MyHTTPServer:
                 logging.warning("Hard close connect!")
             except Exception as e:
                 HTTPError.send_error(conn, e)
-
-            if not conn.connection_is_keep_alive:
-                conn.sock.close()
+            finally:
+                if not conn.connection_is_keep_alive:
+                    conn.sock.close()
 
     def handle_request(self, req, conn):
         if req.headers.get('Connection') == 'Keep-Alive':
@@ -69,17 +69,22 @@ class MyHTTPServer:
         if req.method == "GET":
             return self.handle_get_request(req)
         elif req.method == "POST":
+            if not req.headers.get('Content-Length'):
+                raise HTTPError(411, 'Length Required')
             return self.handle_post_request(req)
         elif req.method == "HEAD":
             return self.handle_head_request(req)
+        else:
+            raise HTTPError(400, "Bad Request")
 
     def handle_get_request(self, req):
-        if os.path.isfile(get_path_to_data(req.headers.get("Host"), req.target[1:])):
+        try:
             my_file = open(get_path_to_data(req.headers.get("Host"), req.target[1:]))
             data = my_file.read()
             my_file.close()
-            return Response(200, "OK", None, data)
-        raise HTTPError(404, "File not found")
+            return Response(200, "OK", {"ETag": f'"{hash(data)}"'}, data)
+        except FileNotFoundError:
+            raise HTTPError(404, "Not Found")
 
     def handle_post_request(self, req):
         if os.path.isfile(get_path_to_data(req.headers.get("Host"), req.target[1:])):
@@ -93,18 +98,10 @@ class MyHTTPServer:
     def handle_head_request(self, req):
         if os.path.isfile(get_path_to_data(req.headers.get("Host"), req.target[1:])):
             return Response(200, "OK")
-        raise HTTPError(404, "File not found")
+        raise HTTPError(404, "Not Found")
 
 
 def main():
-    # host = sys.argv[1]
-    # port = int(sys.argv[2])
-    # name = sys.argv[3]
-
-    # host = "127.0.0.1"
-    # port = 100
-    # name = "server"
-
     host = parsed_toml["server"]["host"]
     port = parsed_toml["server"]["port"]
     name = parsed_toml["server"]["name"]

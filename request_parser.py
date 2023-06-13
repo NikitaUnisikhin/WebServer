@@ -13,7 +13,7 @@ ENCODING = 'iso-8859-1'
 # noinspection PyProtectedMember
 class RequestParser:
     @staticmethod
-    async def parse_request(conn, server):
+    async def parse_request(conn):
         loop = asyncio.get_running_loop()
         is_first_row = True
         is_first_enter = True
